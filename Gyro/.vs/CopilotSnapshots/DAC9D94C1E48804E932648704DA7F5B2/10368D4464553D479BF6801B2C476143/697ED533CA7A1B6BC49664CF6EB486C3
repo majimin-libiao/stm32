@@ -1,0 +1,101 @@
+﻿#include <stm32f1xx_hal.h>
+#include <../CMSIS_RTOS/cmsis_os.h>
+
+osThreadId LEDThread1Handle, LEDThread2Handle;                    // 线程句柄
+
+static void LED_Thread1(void const *argument);
+static void LED_Thread2(void const *argument);
+
+/**
+  * @brief  Main program
+  * @param  None
+  * @retval None
+  */
+int main(void)
+{
+  /* STM32F4xx HAL library initialization:
+       - Configure the Flash prefetch, instruction and Data caches
+       - Configure the Systick to generate an interrupt each 1 msec
+       - Set NVIC Group Priority to 4
+       - Global MSP (MCU Support Package) initialization
+     */
+	HAL_Init();  
+	
+	__GPIOB_CLK_ENABLE();
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	GPIO_InitStructure.Pin = GPIO_PIN_9 | GPIO_PIN_9;
+
+	GPIO_InitStructure.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStructure.Speed = GPIO_SPEED_FREQ_HIGH;
+	GPIO_InitStructure.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	/* Thread 1 definition */
+	osThreadDef(LED1, LED_Thread1, osPriorityNormal, 0, configMINIMAL_STACK_SIZE);
+  
+	 /*  Thread 2 definition */
+	osThreadDef(LED2, LED_Thread2, osPriorityNormal, 0, configMINIMAL_STACK_SIZE);
+  
+	/* Start thread 1 */
+	LEDThread1Handle = osThreadCreate(osThread(LED1), NULL);
+  
+	/* Start thread 2 */
+	LEDThread2Handle = osThreadCreate(osThread(LED2), NULL);
+  
+	/* Start scheduler */
+	osKernelStart();
+
+	  /* We should never get here as control is now taken by the scheduler */
+	for (;;)
+		;
+}
+
+void SysTick_Handler(void)
+{ // 系统滴答中断处理函数
+	HAL_IncTick();                                                // 递增系统时钟计数
+	osSystickHandler();                                           // 调用RTOS滴答处理
+}
+
+/**
+  * @brief  Toggle LED1
+  * @param  thread not used
+  * @retval None
+  */
+static void LED_Thread1(void const *argument)
+{
+	(void) argument;
+  
+	for (;;)
+	{
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_SET);
+		osDelay(2000);
+		
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_RESET);
+		osThreadSuspend(LEDThread2Handle);
+		osDelay(2000);
+		
+		osThreadResume(LEDThread2Handle);
+	}
+}
+
+static void LED_Thread2(void const *argument)
+{ // LED线程2任务
+	(void) argument;                                              // 抑制未使用参数警告
+  
+	for (;;)
+	{ // 主循环
+		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_9);                    // 翻转LED状态
+		osDelay(200);                                             // 延时200毫秒
+	}
+}
+
+#ifdef  USE_FULL_ASSERT
+void assert_failed(uint8_t* file, uint32_t line)
+{ // 断言失败处理函数
+	while (1)
+	{ // 无限循环
+		;
+	}
+}
+#endif
